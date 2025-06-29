@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>JellyNotion</title>
+</head>
+<body>
+    <div data-role="page" class="page type-interior pluginConfigurationPage" id="JellyNotionConfigurationPage"
+         data-require="emby-button,emby-checkbox,emby-input,emby-select">
+        <div data-role="content">
+            <div class="content-primary">
+                <h1>JellyNotion</h1>
+                <form id="JellyNotionConfigurationForm">
+                    <div id="selectContainer">
+                        <select onchange="JellyNotionConfig.onUserSelectorChange();" is="emby-select" id="user-selector"
+                                label="Showing plugin settings for...">
+                            <option value="" disabled selected hidden>Select a user...</option>
+                        </select>
+                    </div>
+                    <div id="configOptionsContainer">
+                        <h3>Hi <span id="JellyNotionName">USERNAME</span>!</h3>
+                        <div class="checkboxcontainer">
+                            <label>
+                                <input is="emby-checkbox" type="checkbox" id="Enabled" />
+                                <span>Enable</span>
+                            </label>
+                        </div>
+                        <div id="notionSetupContainer">
+                            <h2>Notion Setup</h2>
+                            <div class="inputContainer">
+                                <input is="emby-input" id="notionSecret" type="password" label="Notion Secret" />
+                                <div class="fieldDescription">
+                                    The notion internal integration secret
+                                </div>
+                                <button onclick="JellyNotionConfig.fetchDatabases()" is="emby-button" type="button" class="raised emby-button">
+                                    <span>Fetch Databases</span>
+                                </button>
+                            </div>
+                            <div id="selectContainer">
+                                <select disabled onchange="JellyNotionConfig.onDBSelectorChange();" is="emby-select" id="db-selector"
+                                        label="Select Database">
+                                </select>
+                            </div>
+                            <div id="selectContainer">
+                                <select disabled onchange="JellyNotionConfig.onLookupPropertySelectorChange();" is="emby-select" id="lookup-prop-selector"
+                                        label="Select Property">
+                                </select>
+                            </div>
+                            <div id="selectContainer">
+                                <select disabled onchange="JellyNotionConfig.onSyncPropertySelectorChange();" is="emby-select" id="sync-prop-selector"
+                                        label="Select Property">
+                                </select>
+                            </div>
+                            <div class="inputContainer">
+                                <input disabled is="emby-input" id="notionClientID" type="text" label="Unwatched Value" />
+                                <div class="fieldDescription">
+                                    The value to send upon Unwatched
+                                </div>
+                            </div>
+                            <div class="inputContainer">
+                                <input disabled is="emby-input" id="notionClientID" type="text" label="Watching Value" />
+                                <div class="fieldDescription">
+                                    The value to send upon Watching
+                                </div>
+                            </div>
+                            <div class="inputContainer">
+                                <input disabled is="emby-input" id="notionClientID" type="text" label="Watched Value" />
+                                <div class="fieldDescription">
+                                    The value to send upon Watched
+                                </div>
+                            </div>
+                        </div>
+                        <div id="syncPreferenceContainer">
+                            <h2>Sync Preference</h2>
+                            <h3>Movies</h3>
+                            <div class="checkboxcontainer">
+                                <label>
+                                    <input disabled is="emby-checkbox" type="checkbox" id="SyncMovies" />
+                                    <span>Enable</span>
+                                </label>
+                            </div>
+                            <h3>Shows</h3>
+                            <div class="checkboxcontainer">
+                                <label>
+                                    <input disabled is="emby-checkbox" type="checkbox" id="SyncShows" />
+                                    <span>Enable</span>
+                                </label>
+                            </div>
+                        </div>
+                        <br>
+                        <button is="emby-button" type="submit" class="raised button-submit block">
+                            <span>Save</span>
+                        </button>
+                        <button is="emby-button" type="button" class="raised block" onclick="history.back();">
+                            <span>Cancel</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        <script type="text/javascript">
+            var JellyNotionConfig = {
+                guid: "07CAEF58-A94B-4211-A62C-F9774E04EBDB",
+                configCache: [],
+                configOptionsContainer: document.querySelector('#configOptionsContainer'),
+                userSelector: document.querySelector('#user-selector'),
+                notionSecret: document.querySelector('#notionSecret'),
+                databaseSelector: document.querySelector('#db-selector'),
+                lookupPropertySelector: document.querySelector('#lookup-prop-selector'),
+                syncPropertySelector: document.querySelector('#sync-prop-selector'),
+                JellyNotionName: document.querySelector('#JellyNotionName'),
+                userDatabases: [],
+
+                populateUsers: async function (users) {
+                    users.forEach(function (user) {
+                        JellyNotionConfig.userSelector.append(new Option(user.Name, user.Id));
+                    });
+                },
+                loadConfig: async function (user, config) {
+                    if (config != null) {
+                        this.configCache = config;
+                    } else {
+                        config = this.configCache;
+                    }
+
+                    console.log("JellyNotion: Loading config for user " + user);
+                    console.log(config);
+
+                    JellyNotionConfig.configOptionsContainer.setAttribute('hidden', '')
+
+                    if (config.UserConfigs.some(e => e.Id === user)) {
+                        JellyNotionConfig.configOptionsContainer.removeAttribute('hidden');
+                        await this.populateOptionsContainer(config.UserConfigs.filter(e => e.Id === user)[0]);
+                    }
+                },
+                saveConfig: async function (guid) {
+                    const uconfig = this.configCache.UserConfigs.filter(e => e.Id === guid)[0];
+
+                    for (const key in uconfig) {
+                        const element = document.querySelector("#configOptionsContainer #" + key);
+                        if (element) {
+                            if (element.type === 'checkbox') {
+                                uconfig[key] = element.checked;
+                            } else {
+                                if (element.value != null) {
+                                    uconfig[key] = element.value;
+                                }
+                            }
+                        }
+                    }
+
+                    console.log("Saving config:");
+                    console.log(this.configCache);
+                    ApiClient.updatePluginConfiguration(this.guid, this.configCache).then(Dashboard.processPluginConfigurationUpdateResult);
+                },
+                populateOptionsContainer: async function (userConfig) {
+
+                    const userSelected = JellyNotionConfig.userSelector;
+                    JellyNotionConfig.JellyNotionName.innerText = userSelector.options[userSelector.selectedIndex].text;
+
+                    for (const key in userConfig) {
+                        const selectedDB = document.querySelector("#configOptionsContainer input[type = select]#" + key)
+                        if (selectedDB) {
+                            selectedDB.selected = userConfig[key][1];
+                        }
+
+                        const chk = document.querySelector("#configOptionsContainer input[type=checkbox]#" + key);
+                        if (chk) {
+                            chk.checked = userConfig[key];
+                        }
+
+                        const input = document.querySelector("#configOptionsContainer input[type=number]#" + key);
+                        if (input) {
+                            input.value = userConfig[key];
+                        }
+                    }
+                },
+                onUserSelectorChange: async function () {
+                    await this.loadConfig(JellyNotionConfig.userSelector.value, null);
+                },
+                onDBSelectorChange: async function () {
+                    const selectedDB = this.userDatabases.filter(db => db.id == this.databaseSelector.value);
+                    this.lookupPropertySelector.disabled = true;
+                },
+                fetchDatabases: async function () {
+                    const secret = notionSecret.value;
+                    JellyNotionAPI.getDatabases(secret).then(databases => {
+                        this.userDatabases = databases;
+                        databases.forEach(db => {
+                            const dbTitle = db.title?.[0]?.plain_text || db.title?.[0]?.text?.content || db.id;
+                            this.databaseSelector.append(new Option(db.title, db.id))
+                        })
+                    })
+                }
+            }
+
+            var JellyNotionAPI = {
+                getDatabases: function (secret) {
+                    const request = {
+                        url: window.ApiClient.getUrl('JellyNotion/GetDatabases'),
+                        type: 'POST',
+                        data: JSON.stringify({ token: secret }),
+                        headers: {
+                            accept: 'application/json',
+                            'Content-Type': 'application/json' 
+                        }
+                    }
+
+                    return window.ApiClient.fetch(request)
+                        .then(function (result) {
+                            return result;
+                        })
+                        .catch(function (result) {
+                            console.error(result);
+                            Dashboard.alert("Something went wrong, see logs for more details");
+                        });
+                }
+            }
+
+            document.querySelector('#JellyNotionConfigurationPage')
+                .addEventListener('pageshow', async function () {
+                    Dashboard.showLoadingMsg();
+                    await Promise.all([
+                        window.ApiClient.getUsers().then(JellyNotionConfig.populateUsers),
+                        window.ApiClient.getPluginConfiguration(JellyNotionConfig.guid).then(JellyNotionConfig.loadConfig.bind(JellyNotionConfig, ApiClient.getCurrentUserId()))]);
+                    Dashboard.hideLoadingMsg();
+                });
+
+            document.querySelector('#JellyNotionConfigurationForm')
+                .addEventListener('submit', function (e) {
+                    e.preventDefault();
+
+                    Dashboard.showLoadingMsg();
+                    JellyNotionConfig.saveConfig(JellyNotionConfig.userSelector.value);
+                    Dashboard.hideLoadingMsg();
+                });
+        </script>
+    </div>
+</body>
+</html>
